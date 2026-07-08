@@ -1,0 +1,17 @@
+node_modules
+
+__pycache__
+
+venv
+
+.env
+
+dist
+
+coverage
+
+.pytest_cache
+
+.idea
+
+.vscode/settings.json
