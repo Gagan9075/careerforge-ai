@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     ollama_url: str
 
+    adzuna_app_id: str
+    adzuna_app_key: str
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,

@@ -1,17 +1,41 @@
-node_modules
+# Node
+node_modules/
 
-__pycache__
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
 
-venv
+# Virtual environments
+venv/
+.venv/
+**/venv/
+**/.venv/
 
+# Environment variables / secrets
 .env
+.env.*
 
-dist
+# Python testing
+.pytest_cache/
+.coverage
+coverage/
 
-coverage
-
-.pytest_cache
-
-.idea
-
+# IDE
+.idea/
 .vscode/settings.json
+
+# Build / distribution
+dist/
+build/
+*.egg-info/
+
+# Uploaded user files
+uploads/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
