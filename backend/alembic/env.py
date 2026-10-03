@@ -14,6 +14,8 @@ from app.ai.model import ResumeAnalysis
 from app.ats.model import ATSAnalysis
 from app.jobs.model import Job
 from app.jobs.saved_job_model import SavedJob
+from app.jobs.application_model import Application
+from app.notifications.model import Notification
 
 
 # Alembic Config object

@@ -15,6 +15,8 @@ from app.resume.upload import router as resume_upload_router
 from app.ats.router import router as ats_router
 from app.dashboard.router import router as dashboard_router
 from app.jobs.router import router as jobs_router
+from app.jobs.application_router import router as application_router
+from app.notifications.router import router as notification_router
 
 
 app = FastAPI(
@@ -40,6 +42,8 @@ app.include_router(ai_router)
 app.include_router(ats_router)
 app.include_router(dashboard_router)
 app.include_router(jobs_router)
+app.include_router(application_router)
+app.include_router(notification_router)
 
 @app.get("/")
 def root():
