@@ -24,5 +24,9 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
+    resend_api_key: str | None = None
+    email_from: str = "onboarding@resend.dev"
+    resend_test_email: str | None = None
+
 
 settings = Settings()

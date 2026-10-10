@@ -18,10 +18,24 @@ from app.jobs.router import router as jobs_router
 from app.jobs.application_router import router as application_router
 from app.notifications.router import router as notification_router
 
+from contextlib import asynccontextmanager
+
+from app.notifications.scheduler import start_scheduler, stop_scheduler
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_scheduler()
+
+    try:
+        yield
+    finally:
+        stop_scheduler()
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
+    lifespan=lifespan,
 )
 
 

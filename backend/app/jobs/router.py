@@ -1,6 +1,5 @@
 import uuid
 
-from fastapi import HTTPException
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -47,37 +46,92 @@ def get_jobs(
 
 @router.post("/discover", response_model=list[JobResponse])
 def discover_jobs(
-    role: str = Query(..., min_length=2),
-    location: str | None = Query(default=None),
+    role: str = Query(..., min_length=2, max_length=100),
+    location: str | None = Query(
+        default=None,
+        min_length=2,
+        max_length=100,
+    ),
+    limit: int = Query(
+        default=50,
+        ge=1,
+        le=50,
+        description="Maximum number of external job results to request.",
+    ),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    role = role.strip()
+
+    if not role:
+        raise HTTPException(
+            status_code=422,
+            detail="Job role cannot be empty.",
+        )
+
+    if location is not None:
+        location = location.strip()
+
+        if not location:
+            location = None
+
     discovery_service = JobDiscoveryService(
         sources=[
             AdzunaJobSource(
                 search_term=role,
                 location=location,
-                results_per_page=10,
+                results_per_page=limit,
             )
         ]
     )
 
-    return discovery_service.discover_and_save(db=db)
+    try:
+        return discovery_service.discover_and_save(db=db)
+    except Exception as exc:
+        # Log the exception in production rather than exposing
+        # provider credentials or internal error details.
+        raise HTTPException(
+            status_code=502,
+            detail="Job discovery failed. Please try again later.",
+        ) from exc
 
 
 @router.get("/search", response_model=list[JobResponse])
 def search_jobs(
-    search: str | None = Query(default=None),
-    location: str | None = Query(default=None),
-    employment_type: str | None = Query(default=None),
+    search: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=100,
+    ),
+    location: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=100,
+    ),
+    employment_type: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=50,
+    ),
+    limit: int = Query(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum number of active jobs to return.",
+    ),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     return job_service.search_jobs(
         db=db,
-        search=search,
-        location=location,
-        employment_type=employment_type,
+        search=search.strip() if search else None,
+        location=location.strip() if location else None,
+        employment_type=(
+            employment_type.strip()
+            if employment_type
+            else None
+        ),
+        limit=limit,
     )
 
 
@@ -133,9 +187,17 @@ def save_job(
             job_id=job_id,
         )
     except ValueError as exc:
+        message = str(exc)
+
+        if message == "This job is inactive and cannot be saved.":
+            raise HTTPException(
+                status_code=409,
+                detail=message,
+            )
+
         raise HTTPException(
             status_code=404,
-            detail=str(exc),
+            detail=message,
         )
 
     return {

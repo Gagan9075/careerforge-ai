@@ -1,9 +1,9 @@
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from app.notifications.model import Notification
-
 
 class NotificationService:
 
@@ -15,9 +15,12 @@ class NotificationService:
         message: str,
         notification_type: str,
         scheduled_at=None,
+        application_id: uuid.UUID | None = None,
+        commit: bool = True,
     ):
         notification = Notification(
             user_id=user_id,
+            application_id=application_id,
             title=title,
             message=message,
             notification_type=notification_type,
@@ -25,8 +28,12 @@ class NotificationService:
         )
 
         db.add(notification)
-        db.commit()
-        db.refresh(notification)
+
+        if commit:
+            db.commit()
+            db.refresh(notification)
+        else:
+            db.flush()
 
         return notification
 
@@ -35,12 +42,45 @@ class NotificationService:
         db: Session,
         user_id: uuid.UUID,
     ):
+        now = datetime.now(timezone.utc)
+
         return (
             db.query(Notification)
-            .filter(Notification.user_id == user_id)
+            .filter(
+                Notification.user_id == user_id,
+                (
+                    Notification.scheduled_at.is_(None)
+                    | (Notification.scheduled_at <= now)
+                ),
+            )
             .order_by(Notification.created_at.desc())
             .all()
         )
+
+    def process_due_notifications(
+        self,
+        db: Session,
+    ) -> int:
+        """
+        Count notifications that are due and awaiting delivery.
+
+        Actual delivery will be implemented separately.
+        This method does not mark notifications as sent.
+        """
+
+        now = datetime.now(timezone.utc)
+
+        due_notifications = (
+            db.query(Notification)
+            .filter(
+                Notification.is_sent.is_(False),
+                Notification.scheduled_at.is_not(None),
+                Notification.scheduled_at <= now,
+            )
+            .all()
+        )
+
+        return len(due_notifications)
 
     def mark_as_read(
         self,

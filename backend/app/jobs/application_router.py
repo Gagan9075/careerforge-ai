@@ -126,6 +126,8 @@ def update_application(
     service = ApplicationService()
 
     try:
+        update_fields = data.model_fields_set
+
         application = service.update_application(
             db=db,
             user_id=current_user.id,
@@ -134,6 +136,9 @@ def update_application(
             notes=data.notes,
             follow_up_at=data.follow_up_at,
             interview_at=data.interview_at,
+            interview_at_provided=(
+                "interview_at" in data.model_fields_set
+            ),
         )
 
         return service.get_application(
@@ -143,8 +148,14 @@ def update_application(
         )
 
     except ValueError as exc:
+        if str(exc) == "Application not found":
+            raise HTTPException(
+                status_code=404,
+                detail=str(exc),
+            )
+
         raise HTTPException(
-            status_code=404,
+            status_code=400,
             detail=str(exc),
         )
 

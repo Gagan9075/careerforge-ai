@@ -1,10 +1,12 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
 from app.jobs.application_model import Application
 from app.jobs.model import Job
 from app.notifications.service import NotificationService
+from app.notifications.model import Notification as NotificationServiceNotification
 
 
 class ApplicationService:
@@ -128,6 +130,7 @@ class ApplicationService:
         notes: str | None = None,
         follow_up_at=None,
         interview_at=None,
+        interview_at_provided: bool = False,
     ):
         application = (
             db.query(Application)
@@ -141,62 +144,103 @@ class ApplicationService:
         if not application:
             raise ValueError("Application not found")
 
-        # Remember the previous interview date
-        previous_interview_at = application.interview_at
+        try:
+            # Update application fields.
+            if status is not None:
+                application.status = status
 
-        if status is not None:
-            application.status = status
+            if notes is not None:
+                application.notes = notes
 
-        if notes is not None:
-            application.notes = notes
+            if follow_up_at is not None:
+                application.follow_up_at = follow_up_at
 
-        if follow_up_at is not None:
-            application.follow_up_at = follow_up_at
+            # Process interview scheduling when the field is provided.
+            if interview_at_provided:
 
-        if interview_at is not None:
-            application.interview_at = interview_at
-
-        # Create notification only when an interview is scheduled
-        # for the first time.
-        if (
-            interview_at is not None
-            and previous_interview_at is None
-        ):
-            job = None
-
-            if application.job_id:
-                job = (
-                    db.query(Job)
-                    .filter(Job.id == application.job_id)
-                    .first()
+                # Cancel existing pending reminders for this application.
+                pending_reminders = (
+                    db.query(NotificationServiceNotification)
+                    .filter(
+                        NotificationServiceNotification.application_id
+                        == application.id,
+                        NotificationServiceNotification.user_id == user_id,
+                        NotificationServiceNotification.notification_type
+                        == "interview_reminder",
+                        NotificationServiceNotification.is_sent.is_(False),
+                    )
+                    .all()
                 )
 
-            job_title = job.title if job else "your job"
-            company_name = (
-                job.company
-                if job
-                else "the company"
-            )
+                for reminder in pending_reminders:
+                    db.delete(reminder)
 
-            notification_service = NotificationService()
+                # Explicit null means the interview has been cancelled.
+                if interview_at is None:
+                    application.interview_at = None
 
-            notification_service.create_notification(
-                db=db,
-                user_id=user_id,
-                title="Interview Scheduled",
-                message=(
-                    f"Your interview for {job_title} "
-                    f"at {company_name} is scheduled for "
-                    f"{interview_at}."
-                ),
-                notification_type="interview_reminder",
-                scheduled_at=interview_at,
-            )
+                else:
+                    # Require a timezone-aware interview timestamp.
+                    if (
+                        interview_at.tzinfo is None
+                        or interview_at.utcoffset() is None
+                    ):
+                        raise ValueError(
+                            "Interview date must include a timezone."
+                        )
 
-        db.commit()
-        db.refresh(application)
+                    application.interview_at = interview_at
 
-        return application
+                    # Calculate interview and reminder times in UTC.
+                    interview_time_utc = interview_at.astimezone(timezone.utc)
+                    reminder_at = interview_time_utc - timedelta(hours=24)
+                    now = datetime.now(timezone.utc)
+
+                    # Skip reminders for interviews that have already started.
+                    if interview_time_utc > now:
+                        # If the 24-hour reminder deadline has passed,
+                        # schedule the reminder for immediate processing.
+                        if reminder_at <= now:
+                            reminder_at = now
+                        job = None
+
+                        if application.job_id:
+                            job = (
+                                db.query(Job)
+                                .filter(Job.id == application.job_id)
+                                .first()
+                            )
+
+                        job_title = job.title if job else "your job"
+                        company_name = (
+                            job.company if job else "the company"
+                        )
+
+                        notification_service = NotificationService()
+
+                        notification_service.create_notification(
+                            db=db,
+                            user_id=user_id,
+                            application_id=application.id,
+                            title="Interview Reminder",
+                            message=(
+                                f"Your interview for {job_title} "
+                                f"at {company_name} is scheduled for "
+                                f"{interview_at.isoformat()}."
+                            ),
+                            notification_type="interview_reminder",
+                            scheduled_at=reminder_at,
+                            commit=False,
+                        )
+
+            db.commit()
+            db.refresh(application)
+
+            return application
+
+        except Exception:
+            db.rollback()
+            raise
 
     def delete_application(
         self,

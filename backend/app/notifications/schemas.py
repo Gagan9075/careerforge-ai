@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class NotificationResponse(BaseModel):
     id: str
+    application_id: str | None = None
     title: str
     message: str
     notification_type: str
@@ -18,3 +19,4 @@ class NotificationCreate(BaseModel):
     message: str
     notification_type: str
     scheduled_at: datetime | None = None
+    application_id: str | None = None

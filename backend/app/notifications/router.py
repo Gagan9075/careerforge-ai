@@ -31,6 +31,12 @@ def create_notification(
 ):
     service = NotificationService()
 
+    application_id = (
+        uuid.UUID(data.application_id)
+        if data.application_id
+        else None
+    )
+
     notification = service.create_notification(
         db=db,
         user_id=current_user.id,
@@ -38,10 +44,16 @@ def create_notification(
         message=data.message,
         notification_type=data.notification_type,
         scheduled_at=data.scheduled_at,
+        application_id=application_id,
     )
 
     return {
         "id": str(notification.id),
+        "application_id": (
+            str(notification.application_id)
+            if notification.application_id
+            else None
+        ),
         "title": notification.title,
         "message": notification.message,
         "notification_type": notification.notification_type,
@@ -69,6 +81,11 @@ def get_notifications(
     return [
         {
             "id": str(notification.id),
+            "application_id": (
+                str(notification.application_id)
+                if notification.application_id
+                else None
+            ),
             "title": notification.title,
             "message": notification.message,
             "notification_type": notification.notification_type,

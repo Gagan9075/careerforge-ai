@@ -59,6 +59,11 @@ class Job(BaseModel):
         nullable=False,
     )
 
+    external_id: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
     source_url: Mapped[str] = mapped_column(
         String(500),
         nullable=False,

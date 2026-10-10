@@ -1,4 +1,6 @@
 import uuid
+import re
+from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 
 from app.jobs.model import Job
@@ -21,25 +23,68 @@ class JobService:
     def __init__(self):
         self.matcher = JobMatchingService()
 
+    @staticmethod
+    def _get_adzuna_id(source_url: str | None) -> str | None:
+        """Extract the stable advertisement ID from an Adzuna URL."""
+        if not source_url:
+            return None
+
+        path = urlparse(source_url).path
+        match = re.search(
+            r"/(?:land/)?(?:details|ad)/([0-9]+)(?:/|$)",
+            path,
+        )
+        return match.group(1) if match else None
+
     def create_job(self, db: Session, job_data: JobCreate) -> Job:
-        existing_job = (
-            db.query(Job)
-            .filter(
-                Job.title == job_data.title,
-                Job.company == job_data.company,
-                Job.source_url == job_data.source_url,
-            )
-            .first()
+        source = (job_data.source or "").strip().lower()
+        adzuna_id = (
+            self._get_adzuna_id(job_data.source_url)
+            if source == "adzuna"
+            else None
         )
 
+        existing_job = None
+
+        if adzuna_id:
+            # Match using the stable external advertisement ID.
+            existing_job = (
+                db.query(Job)
+                .filter(
+                    Job.source.ilike("adzuna"),
+                    Job.external_id == adzuna_id,
+                )
+                .first()
+            )
+
+        else:
+            # Preserve existing matching behavior for other sources
+            # and URLs where an Adzuna ID cannot be extracted.
+            existing_job = (
+                db.query(Job)
+                .filter(
+                    Job.title == job_data.title,
+                    Job.company == job_data.company,
+                    Job.source_url == job_data.source_url,
+                )
+                .first()
+            )
+
         if existing_job:
+            existing_job.external_id = adzuna_id
+            existing_job.title = job_data.title
+            existing_job.company = job_data.company
             existing_job.description = job_data.description
             existing_job.skills = job_data.skills
             existing_job.location = job_data.location
             existing_job.employment_type = job_data.employment_type
             existing_job.experience_level = job_data.experience_level
-            existing_job.min_experience_years = job_data.min_experience_years
-            existing_job.max_experience_years = job_data.max_experience_years
+            existing_job.min_experience_years = (
+                job_data.min_experience_years
+            )
+            existing_job.max_experience_years = (
+                job_data.max_experience_years
+            )
             existing_job.source_url = job_data.source_url
             existing_job.posted_at = job_data.posted_at
             existing_job.is_active = True
@@ -63,6 +108,7 @@ class JobService:
             min_experience_years=job_data.min_experience_years,
             max_experience_years=job_data.max_experience_years,
             source=job_data.source,
+            external_id=adzuna_id,
             source_url=job_data.source_url,
             application_url=job_data.application_url,
             posted_at=job_data.posted_at,
@@ -141,6 +187,7 @@ class JobService:
         search: str | None = None,
         location: str | None = None,
         employment_type: str | None = None,
+        limit: int = 10,
     ) -> list[Job]:
 
         query = db.query(Job).filter(
@@ -165,14 +212,14 @@ class JobService:
 
         if employment_type:
             query = query.filter(
-                Job.employment_type.ilike(
-                    f"%{employment_type}%"
-                )
+                Job.employment_type.ilike(f"%{employment_type}%")
             )
 
-        return query.order_by(
-            Job.created_at.desc()
-        ).all()
+        return (
+            query.order_by(Job.created_at.desc())
+            .limit(limit)
+            .all()
+        )
 
     def match_resume_with_job(
         self,
@@ -245,10 +292,19 @@ class JobService:
         }
 
     def save_job(self, db: Session, user_id: uuid.UUID, job_id: uuid.UUID):
-        job = db.query(Job).filter(Job.id == job_id).first()
+        job = (
+            db.query(Job)
+            .filter(Job.id == job_id)
+            .first()
+        )
 
         if not job:
             raise ValueError("Job not found")
+
+        if not job.is_active:
+            raise ValueError(
+                "This job is inactive and cannot be saved."
+            )
 
         existing = (
             db.query(SavedJob)
@@ -319,6 +375,7 @@ class JobService:
                 "source": job.source,
                 "source_url": job.source_url,
                 "application_url": job.application_url,
+                "is_active": job.is_active,
             }
             for saved_job, job in saved_jobs
         ]
