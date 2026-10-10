@@ -111,6 +111,9 @@ def test_create_job_does_not_match_different_advertisement_ids(
     existing = make_existing_job(
         source_url="https://www.adzuna.in/details/9999999999"
     )
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
+
     new_job = service.create_job(db, job_payload)
 
     assert new_job is not existing
